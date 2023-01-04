@@ -8,6 +8,7 @@
 安装uTools插件，插件市场中搜索 `flowcharts.js` 安装即可
 
 ## 简明语法使用说明
+<<<<<<< HEAD
 
 - 节点定义： `节点名称(背景颜色 或 方向)`
 - 条件节点： `<节点名称>(背景颜色 或 方向)`
@@ -75,7 +76,3 @@ flowchart.js:
 - [gitee](https://gitee.com/mirrors/Flowchart.js#flowchartjs)
 
 - [flowchart.js](http://flowchart.js.org)
-
-
-
-
