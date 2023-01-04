@@ -477,8 +477,8 @@
 		
 		img.onload =()=> { // 图像加载完成
 			context.drawImage(img, 0, 0, canWidth, canHeight);
-			document.querySelector('body').appendChild(img)
-			document.querySelector('body').appendChild(canvas)
+			// document.querySelector('body').appendChild(img)
+			// document.querySelector('body').appendChild(canvas)
 			const a = document.createElement('a');
 			var d = new Date();
 			var timeString = String(d.getFullYear()).slice(2) +"."+ (d.getMonth()+1) +"."+ d.getDate() +"_"+ d.getHours() +":"+ d.getMinutes() +":"+ d.getSeconds();
