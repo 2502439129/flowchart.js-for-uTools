@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Conversion code</title>
+	<link rel="stylesheet" type="text/css" href="./css/bootstrap.css">
+	<script src="./js/jquery-3.6.0.min.js" ></script>
+	<script src="./js/raphael.min.js" ></script>
+	<script src="./js/flowchart.js" ></script>
+	<script src="./js/bootstrap.js"></script>
+</head>
+<style type="text/css">
+	textarea{
+		font-family: "Courier New";
+	}
+</style>
+<body class="container" style="padding-top: 10%">
+	<div class="row">
+		<div class="col-md-6">
+			<h3>Original code</h3>
+			<textarea class="form-control" rows="15" id="oriCode" autofocus>S('开始', myFunction )
+O('处理', 'www.baidu.com')
+C('判断')
+c1|r-> I()
+c1|b-> S()  
+s1 -> </textarea>
+		</div>
+		<div class="col-md-6">
+			<h3>New code</h3>
+			<textarea class="form-control" rows="15" id="newCode"></textarea>
+		</div>
+	</div>
+</body>
+<script type="text/javascript">
+	var keyCode = ["S", "E", "O", "S", "P", "IO"];
+	var keyDir = ["r", "l", "b", "t"];
+
+	var keyCodeMap = {"S":"start", "E":"end"}
+
+	var rList = []; // [{i:0, t:'start', n:'name', f:'func', u:'url', s:'style'}]
+	var lList = [];	// [[s,e,d]]
+
+	function transCode(code) {
+		let line = code.split("\n")
+		var r = {}; // 单条内容
+		var rstr = ''; // 单内容字符串
+		for (var i = 0; i < line.length; i++) {
+			rstr = $.trim(line[i]);
+			if (rstr.indexOf("->") < 0) {
+				r.type = keyCodeMap[rstr[0]]
+				var rcl = rstr.slice(2, -1).split(","); 
+				console.log(rcl)
+			} else{
+				console.log(rstr);
+			}
+		}
+		// console.log(a);
+	}
+</script>
+<script type="text/javascript"> // ctrl + enter
+	var keys = []; 
+	$("body").keydown(function(e){/**/
+		if (e.keyCode == 17) {
+			keys.push(17);
+		}
+		if (e.keyCode == 13) {
+			if (keys[keys.length - 1] == 17) {
+				//回车事件
+				// console.log($("#oriCode").val());
+				transCode($("#oriCode").val());
+			}
+		}
+	});
+	$("body").keyup(function(e){
+		keys = [];
+	});
+</script>
+<!-- textarea 高亮 -->
+<!-- https://www.cdolivet.com/editarea/editarea/docs/customization_plugin.html -->
+<!-- https://codemirror.net/docs/guide/ -->
+</html>

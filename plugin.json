@@ -1,0 +1,12 @@
+{
+	"main": "index.html",
+	"preload": "preload.js",
+	"logo": "logo.png",
+	"features": [
+		{
+			"code": "flowchar.js",
+			"explain": "flowchart.js 使用简单的伪代码创建流程图",
+			"cmds":["flowchart", "fc", "流程图", "lct"]
+		}
+	]
+}

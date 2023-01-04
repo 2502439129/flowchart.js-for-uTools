@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>Flowchart.js</title>
+	<link rel="stylesheet" type="text/css" href="./css/bootstrap.css">
+	<script src="./js/jquery-3.6.0.min.js" ></script>
+	<script src="./js/raphael.min.js" ></script>
+	<script src="./js/flowchart.js" ></script>
+	<script src="./js/bootstrap.js"></script>
+</head>
+
+<style type="text/css">
+	div > strong {
+		text-decoration: underline;
+	}
+	.alert {
+		position: fixed;
+		right: 20px;
+		bottom: 10px;
+	}
+	.h3 {
+		border: none;
+		display: none;
+	}
+	textarea{
+		font-family: "Courier New";
+	}
+</style>
+
+<script type="text/javascript"> // 初始化：脚本加载
+	var nList;
+	window.onload = function(){
+		$("#canvas").css('height', $("#code").css('height'))
+		$("#canvas").css('overflow', 'auto')
+		nList = utools.db.allDocs();
+		// 添加选择
+		nList.forEach(function(item) {
+			pullOption(item._id);
+		})
+		if(nList.length>0){
+			var nextScript = nList[0]._id;
+			$("select").val(nextScript);
+			$("h3").text(nextScript);
+			$("#code").val(utools.dbStorage.getItem(nextScript));
+		}
+	};
+</script>
+<script type="text/javascript"> // 初始化：脚本运行
+	var chart = "";
+	var chartMap = {
+		// 'x': 0,
+		// 'y': 0,
+		'line-width': 3,
+		'maxWidth': 3,  // ensures the flowcharts fits within a certian width
+		'line-length': 50,
+		'text-margin': 10,
+		'font-size': 14,
+		'font': 'normal',
+		'font-family': 'Helvetica',
+		'font-weight': 'normal',
+		'font-color': 'black',
+		'line-color': 'black',
+		'element-color': 'black',
+		'fill': 'white',
+		'yes-text': 'yes',
+		'no-text': 'no',
+		'arrow-end': 'block',
+		'scale': 0.6,
+		'symbols': {
+			'start': {
+				'font-color': 'red',
+				'element-color': 'green',
+				'fill': 'yellow'
+			},
+			'end':{
+				'class': 'end-element'
+			}
+		},
+		'flowstate' : {
+			'red': {'fill':'red'},
+			'red,bold': {'fill':'red', 'font-weight':'bold'},
+			'orange': {'fill':'orange'},
+			'orange,bold': {'fill':'orange', 'font-weight':'bold'},
+			'yellow': {'fill':'yellow'},
+			'yellow,bold': {'fill':'yellow', 'font-weight':'bold'},
+			'green': {'fill':'green'},
+			'green,bold': {'fill':'green', 'font-weight':'bold'},
+			'cyan': {'fill':'cyan'},
+			'cyan,bold': {'fill':'cyan', 'font-weight':'bold'},
+			'blue': {'fill':'blue'},
+			'blue,bold': {'fill':'blue', 'font-weight':'bold'},
+			'purple': {'fill':'purple'},
+			'purple,bold': {'fill':'purple', 'font-weight':'bold'},
+
+			'black': {'fill':'black', 'font-color':'white'},
+			'black,bold': {'fill':'black', 'font-weight':'bold', 'font-color':'white'},
+			'gray': {'fill':'gray', 'font-color':'white'},
+			'gray,bold': {'fill':'gray', 'font-weight':'bold', 'font-color':'white'},
+
+			// condition
+			'Yes/No': {'yes-text' : 'Yes', 'no-text' : 'No'},
+			'YES/NO': {'yes-text' : 'YES', 'no-text' : 'NO'},
+			'Y/N': {'yes-text' : 'Y', 'no-text' : 'N'},
+			'y/n': {'yes-text' : 'y', 'no-text' : 'n'},
+
+			// special
+			'past' : { 'fill' : '#CCCCCC', 'font-size' : 12},
+			'current' : {'fill' : 'yellow', 'font-color' : 'red', 'font-weight' : 'bold'},
+			'future' : { 'fill' : '#FFFF99'},
+			'request' : { 'fill' : 'blue'},
+			'invalid': {'fill' : '#444444'},
+			'approved' : { 'fill' : '#58C4A3', 'font-size' : 12, 'yes-text' : 'APPROVED', 'no-text' : 'n/a' },
+			'rejected' : { 'fill' : '#C45879', 'font-size' : 12, 'yes-text' : 'n/a', 'no-text' : 'REJECTED' }
+		}
+	};
+	// 调整
+	function adjustSVG() {
+		// 文字高度 为 [12, 20]
+		let tspanDom = $('tspan:first')[0]
+		let ch = $("#canvas").css('height').replace('px','')
+		let cw = $("#canvas").css('width') .replace('px','')
+
+		let sh = $("svg:first").css('height').replace('px','')
+		let sw = $("svg:first").css('width') .replace('px','')
+
+		let mList = [0,0,0,0,0,0] // (scaleX(),skewY(),skewX(),scaleY(),translateX(),translateY())
+		let scale = 1
+
+		// 比值
+		let ratio = sh / sw
+		// 文字大小
+		let tspanSize = tspanDom.getBoundingClientRect().height
+
+		if (tspanSize>=12 && tspanSize<=20) return 
+
+		
+		if (tspanSize<12) scale = (12/tspanSize).toFixed(3)
+		else if (tspanSize>20) scale = (20/tspanSize).toFixed(3)
+
+		let hwScale = ( (scale-1)/2 ).toFixed(3)
+
+		mList[5] = (sh * hwScale).toFixed(3)
+		mList[4] = (sw * hwScale).toFixed(3)
+
+		mList[0] = scale
+		mList[3] = scale
+		let matrix = 'matrix('+mList.join(',')+')'
+		$("svg").css('transform', matrix)
+	}
+	// 绘制
+	function drawFC(){
+		var code = getCode();
+		// console.log(code);
+		if (chart) {
+			chart.clean();
+		}
+		try {
+			// utools.dbStorage.setItem($("h3").text(), code); // 保存
+		}catch(e){
+			showMess("保存失败", "请反馈！", "danger");
+			return;
+		}
+		try {
+			chart = flowchart.parse(code);
+			chart.drawSVG('canvas', chartMap);
+			reWriteSVG();
+		}catch(e){
+			showMess("运行失败", "请检查脚本是否正确，或反馈！", "danger");
+			return;
+		}
+		adjustSVG()
+	};
+
+</script>
+<script type="text/javascript"> // 脚本方法
+	// flowchart 内方法
+	// 1. 展示信息
+	function myFunction(event, node) {
+		console.log(event, node)
+		showMess(node.type, node.text,"info");
+	}
+	// 2. 链接跳转
+	function openUrl(event, node) {
+		var pattern = /\[(.*?)\]/;
+		console.log(node);
+		console.log(node.key);
+		const u = pattern.exec(node.key)[1]
+		console.log(u);
+		utools.shellOpenExternal(String(u));
+	}
+</script>
+
+<body class="container-fluid">
+	<!-- 标题 脚本名 -->
+	<h3 onclick="adjustSVG()">Flowchart</h3>
+	<input type="text" name="h3text" id="h3text" class="h3">
+
+	<!-- 主体 -->
+	<div class="row" style="margin-top: 20px;">
+		<!-- 左：代码 -->
+		<div class="col-xs-6 ">
+			<!-- 按钮组 -->
+			<div class="row row-no-gutters" style="margin-bottom: 1rem;">
+				<form class="form-inline">
+				<div class="col-xs-8 form-group">
+					<button class="btn btn-default" id="new_script" type="button"><strong>新建</strong></button>
+					<div class="col-sm-5" id="input-div" style="display:none">
+						<div class="input-group">
+						<input id="input" type="text" class="form-control" placeholder="new script">
+						<div class="input-group-addon btn-default">
+							<span class="glyphicon glyphicon-ok"></span>
+						</div>
+						</div>
+					</div>
+					<button class="btn btn-default " id="save_script" type="button">保存</button>
+					
+					<button class="btn btn-default" id="delete_script" type="button" data-toggle="modal" data-target="#model">删除</button>
+					
+				</div>
+				</form>
+				<div class="col-xs-4">
+					<select class="form-control" id="change_script">
+						<option selected="selected" disabled="disabled" >选择脚本</option>
+					</select>
+				</div>
+			</div>
+
+			<!-- 文本框 -->
+			<textarea class="form-control" id="code" rows="20" placeholder="请输入伪代码。。。&#13;&#10;ctrl + enter 执行" autofocus="autofocus"></textarea>
+		</div>
+		<!-- 右：图像 -->
+		<div class="col-xs-6">
+			<div class="row row-no-gutters" style="margin-bottom: 1rem;">
+				<button class="btn btn-primary" id="run" type="button" onclick="drawFC()">Run</button>
+				<button class="btn btn-default" id="copyBtn" type="button"> 保存图片 </button>
+				<div class="checkbox btn" style="display: inline">
+				  <label id="simple_label">
+				    <input type="checkbox" value="" id="simple_tag">简明语法
+				  </label>
+				</div>
+			</div>
+				<div id="canvas" class="form-control"></div>
+		</div>
+	</div>
+
+	<!-- 信息提示 警告框 -->
+	<div class="alert alert-dismissible fade" role="alert">
+		<button type="button" class="close" aria-label="Close" data-dismiss="alert">
+			<span aria-hidden="true" onclick="pullIn()">&times;</span></button>
+		<strong>Success! </strong> 
+		<span>Better check yourself, you're not looking too good.</span>
+	</div>
+
+	<!-- 删除确认 模态框 -->
+	<div class="modal fade" tabindex="-1" role="dialog" id="model">
+		<div class="modal-dialog modal-sm" role="document">
+			<div class="modal-content">
+	      		<div class="modal-header">
+	      			<button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
+        			<h4 class="modal-title" id="myModalLabel">删除确认</h4>
+    			</div>
+	      		<div class="modal-body">确认删除？</div>
+	      		<div class="modal-footer">
+	      			<button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
+        			<button type="button" class="btn btn-primary" data-dismiss="modal" id="delete_sure">删除</button>
+	      		</div>
+	    	</div>
+	  	</div>
+	</div>
+
+	<!-- 大图显示 模态框 -->
+	<div class="modal fade" tabindex="-1" role="dialog" id="svg_modal">
+		<div class="modal-dialog modal-lg" role="document">
+			<div class="modal-content center-block text-center" id="svg_content" >
+	    	</div>
+	  	</div>
+	</div>
+
+</body>
+
+<script type="text/javascript"> // 点击事件
+	// 简明语法
+	$("#simple_label").on('click', function(){
+		if($("#simple_tag").prop("checked")==true){
+			$("#code").attr("placeholder", "已启用简明语法\nnode: 节点名(节点样式/方向)\n连接线：->\n开始：S\n结束：E\n判断：\n <节点名>(样式)\n <节点名|yes>\n <节点名|no>\n全局方向：[right]\n\n例：\nS -> text(red) -> <cond？>\n<cond？|y>(top) -> text\n<cond？|n> -> E\n\n[right]")
+		} else {
+			$("#code").attr("placeholder", "请输入伪代码。。。\nctrl + enter 执行")
+		}
+	})
+
+	// 展示 svg 大图，修改尺寸 
+	$('#canvas').on('click','svg', function() {
+		// 拷贝
+		$("#svg_content").html($('#canvas').html());
+		let transform = $("#canvas svg").css('transform')
+		if (transform=='none') transform='matrix(1,0,0,1,0,0)'
+		scale = transform.match(/\((.*?)\)/)[1].split(',')[0]
+		let height = $("svg:first")[0].getBoundingClientRect().height
+		$("#svg_content")[0].style.height = height+'px'
+		let mList = [scale, 0,0, scale,0,0]
+
+		let hwScale = ( (scale-1)/2 ).toFixed(3)
+		mList[5] = (height/scale * hwScale).toFixed(3)
+
+		let matrix = 'matrix(' + mList.join(',') + ')'
+
+		$("#svg_content svg").css('transform', matrix) // 缩放
+
+		$("#svg_content").css('height', height+40)
+
+		$('#svg_modal').modal('show');
+	});
+
+	// <!-- 新建 -->
+	$("#new_script").click(function(){
+		showInput(true);
+	});
+	$("#input").blur(function(){
+		setTimeout('showInput(false)',500);
+	});
+	function showInput(n){//输入框展示
+		if (n) {
+			$("#new_script").hide();
+			$("#input-div").fadeIn(500);
+			document.getElementById("input").focus();
+		} else {
+			$("#new_script").fadeIn(500);
+			$("#input-div").hide();
+		}
+	}
+	$(".input-group-addon").click(function(){
+		const nsName = $("#input").val();
+		try{
+			showInput(false);
+			if (nsName == "" || nsName == null) {
+				showMess("脚本名不可为空", "请重新命名", "warning");
+				return;
+			}
+			if (isInDB(nsName)) {
+				showMess("脚本名不可重复", "请重新命名", "warning");
+				return;
+			}
+	    	utools.dbStorage.setItem(nsName,"");
+	    	nList = utools.db.allDocs();
+			$("h3").text(nsName);
+			pullOption(nsName);
+			$("select").val(nsName);
+			$("#code").val("");
+			$("#input").val("");
+			showMess(nsName, " 新建成功", "success");
+		} catch(error){
+			showMess("新建失败！", " 请检查是否组件缺失。", "danger");
+			return;
+		}
+	});
+
+	// <!-- 保存 -->
+	$("#save_script").click(function(){
+		try{
+			utools.dbStorage.setItem($("h3").text(), $("#code").val());
+		} catch(error){
+			showMess("保存失败！", " 请检查是否组件缺失。", "danger");
+			return;
+		}
+		showMess($("h3").text(), " 保存成功", "success");
+	});
+
+	// <!-- 切换 -->
+	$("#change_script").change(function(){
+		try{
+			var s = $("select").find("option:selected").text();
+			$("h3").text(s);
+			$("#code").val(utools.dbStorage.getItem(s));
+			$("#run").click();
+		}catch(error){
+			showMess("切换失败!", " 请检查是否组件缺失。", "danger");
+			return;
+		}
+		showMess($("h3").text(), " 切换成功", "success");
+	});
+
+	// <!-- 删除 -->
+	$("#delete_script").click(function(){
+		$(".modal-body").html("确认删除 <strong>" + $("h3").text() + "</strong>?");
+	});
+	$("#delete_sure").click(function(){
+		const title = $("h3").text();
+		try{
+			utools.dbStorage.removeItem(title);
+			nList = utools.db.allDocs();
+			console.log(nList);
+			$("select option[value='"+title+"']").remove();
+			var nextScript = nList[0]._id;
+			$("select").val(nextScript);
+			$("h3").text(nextScript);
+			$("#code").val(utools.dbStorage.getItem(nextScript));
+		}catch(e){
+			showMess("删除失败!", " 请检查是否组件缺失。", "danger");
+			return;
+		}
+		showMess(title, " 删除成功", "success");
+	});
+
+	// <!-- 重命名 -->
+	var oldname = '';
+	$("h3").dblclick(function(){
+		oldname = $("h3").text();
+		$("h3").hide();
+		$("#h3text").val(oldname);
+		$("#h3text").show();
+		document.getElementById("h3text").focus();
+	});
+	$("#h3text").keydown(function(e){
+		if (e.keyCode == 13) {
+			reName(oldname, $("#h3text").val());
+		}
+	});
+	$("#h3text").blur(function(){
+		reName(oldname, $("#h3text").val());
+	});
+	function reName(oldname, name){
+		if (name == "" || name == null) {
+			showMess("脚本名不可为空", "请重新命名", "warning");
+			return;
+		}
+		if (isInDB(name)) {
+			showMess("脚本名不可重复", "请重新命名", "warning");
+			return;
+		}
+		$("#h3text").hide();
+		$("h3").text(name);
+		$("h3").show();
+		utools.dbStorage.setItem(name, $("#code").val());
+		utools.dbStorage.removeItem(oldname);
+		nList = utools.db.allDocs();
+		$("option[value="+oldname+"]").remove();
+		pullOption(name);
+		$("select").val(name);
+		showMess("重命名成功", ".","success");
+	}
+
+
+	// <!-- 保存图片 -->
+	$("#copyBtn").click(function (){
+		try {
+		const down=document.querySelector('#canvas svg');
+   
+	    const downCopy=down.cloneNode(down);//克隆一份dom，避免样式设置等操作影响原有界面
+
+	    downCopy.style.transform = '';
+
+	    downCopy.style.background = 'white';//设置div背景为蓝色
+
+	    const xmlDom=new XMLSerializer().serializeToString(downCopy);//将设置好颜色的div转为xml
+
+	    const xml=`<?xml version="1.0" standalone="no"?>\r\n${xmlDom}`;//生成xml文件
+
+	    const src=`data:image/svg+xml;chartset=utf-8,${encodeURIComponent(xml)}`;//生成src
+
+		const svgWidth = $("#canvas svg")[0].getBoundingClientRect().width.toFixed(3);
+		const svgHeight = $("#canvas svg")[0].getBoundingClientRect().height.toFixed(3);
+
+
+	    const img = new Image(svgWidth, svgHeight);
+		img.src = src; //(这个src就是上面生成的src)
+		img.id = "biao1";
+		// document.body.appendChild(img);
+
+		const canvas = document.createElement('canvas');
+		const canWidth = svgWidth;
+		const canHeight = svgHeight;
+		canvas.width = canWidth;
+		canvas.height = canHeight;
+		 
+		const context = canvas.getContext('2d'); // 获取绘图对象
+		
+		img.onload =()=> { // 图像加载完成
+			context.drawImage(img, 0, 0, canWidth, canHeight);
+			document.querySelector('body').appendChild(img)
+			document.querySelector('body').appendChild(canvas)
+			const a = document.createElement('a');
+			var d = new Date();
+			var timeString = String(d.getFullYear()).slice(2) +"."+ (d.getMonth()+1) +"."+ d.getDate() +"_"+ d.getHours() +":"+ d.getMinutes() +":"+ d.getSeconds();
+			console.log(timeString);
+			a.download = timeString + `.jpg`;
+			a.href = canvas.toDataURL('image/jpeg', 1);
+			a.click();
+		};
+		}catch(error){
+			showMess("保存图片失败！", "，请确认图片存在。", "danger");
+		}
+	});
+	
+	$(".input-group-addon").click(function () {
+		// alert("OK");
+	});
+</script>
+<script type="text/javascript">// 通用 
+	// 简明语法
+	function getCode(){
+		if($("#simple_tag").prop("checked")==true) {
+			return nodeToFC(analyzeToNode($("#code").val()));
+		} else{
+			return $("#code").val();
+		}
+	}
+	function getANode(val){
+		// abc
+		// abc(a)
+		// <abc>
+		// <abc>(a)
+		// <abc|y>
+		// <abc|y>(a)
+		if (val == undefined || val == null) return ["", "", false,""];
+		val = val.trim();
+		let r = {name:"", dec:"", isCond: false, yn: ""}; // name, dec, isCod, y/n
+		let dec = val.match(/(?<=\()(.*?)(?=\))/g);
+		if (dec == null) r.dec = "";
+		else {
+			r.dec = dec[0];
+			val = val.replace("("+r.dec+")", "");
+		}
+		let isCond = val.match(/(?<=\<)(.*?)(?=\>)/g);
+		if (isCond == null) {
+			r.name = val;
+		} else {
+			r.isCond = true;
+			let condName = val.match(/(?<=\<)(.*?)(?=\|)/g);
+			if (condName == null) {
+				r.name = isCond[0];
+				r.yn = "";
+			} else {
+				r.name = condName[0];
+				r.yn = val.match(/(?<=\|)(.*?)(?=\>)/g)[0][0].toLowerCase();
+			}
+		}
+		return [r.name, r.dec, r.isCond, r.yn];
+	}
+	function analyzeToNode(){
+		let nodeList = {};
+		let node = {name:"", type:"", dec:"", next:"", dir:"", 
+					"yes-next":"", "yes-dir":"", "no-next":"", "no-dir":""};
+		const nt = {s:"start", e:"end", o:"operation", c:"condition"};
+		const nd = {b: "bottom", r: "right"};
+		const ndir = ["top", "bottom", "right", "left"];
+		const code = $("#code").val();
+		const dirStr = code.match(/(?<=\[)(.*?)(?=\])/g);
+		const thedir = (dirStr==null) ? nd.b : (dirStr[0]=="right"?nd.r:nd.b);
+		if (code.trim() == "")return;
+		let lineList = code.trim().split("\n");
+		lineList.forEach(function(item, index, array){
+			let nsList = item.trim().split("->");
+			if (nsList.length <= 1) return;
+			nsList.forEach(function(t, i, a){
+				var nodeDec = getANode(t);
+				if (nodeDec[2] && nodeDec[3]!=""){
+					let name = nodeDec[0];
+					node = nodeList[name];
+					if (node == null) {
+						node = {"name":name, type:nt.c, dec:"", next:"", dir:"", 
+							"yes-next":"", "yes-dir":"", "no-next":"", "no-dir":""};
+					}
+					if (nodeDec[3] == "y") {
+						node["yes-next"] = getANode(a[i+1])[0];
+						if (ndir.includes(nodeDec[1])) node["yes-dir"] = nodeDec[1];
+					}
+					if (nodeDec[3] == "n") {
+						node["no-next"] = getANode(a[i+1])[0];
+						if (ndir.includes(nodeDec[1])) node["no-dir"] = nodeDec[1];
+					}
+				} else if (nodeDec[2] && nodeDec[3]=="") {
+					try {
+						node = {"name":nodeDec[0], type:nt.c, dec:nodeDec[1], next:"", dir:"", 
+							"yes-next":"", "yes-dir":"", "no-next":"", "no-dir":""};
+						throw new Error("Cond Return");
+					} catch(e){
+						if (e.message !== "Cond Return") throw e;
+					}
+				} else {
+					if (nodeList[nodeDec[0]] == null) {
+						node.name = nodeDec[0];
+						node.type = (node.name=="S") ? nt.s : ((node.name=="E") ? nt.e : nt.o);
+						if (i < a.length) node.next = getANode(a[i+1])[0];
+						if (ndir.includes(nodeDec[1])) node.dir = nodeDec[1];
+						else {
+							node.dec = nodeDec[1];
+							node.dir = thedir;
+						}
+					} else {
+						node = nodeList[nodeDec[0]];
+					}
+				}
+				nodeList[node.name] = node;
+				node = {"name": "", type: "", dec: "", next:"", dir:"", 
+						"yes-next":"", "yes-dir":"", "no-next":"", "no-dir":""};
+			})
+		})
+		return nodeList;
+	}
+	function nodeToFC(nodeList){
+		let nodeStr = "";
+		let con = "";
+		for(let key in nodeList) {
+			item = nodeList[key];
+			// if (item.name == "S" && item.type == "start") item.name="start";
+			// if (item.name == "E" && item.type == "end") item.name="end";
+			let ns = (item.dec=="")? item.name+"=>"+item.type+": "+ item.name:item.name+"=>"+item.type+": "+ item.name+"|"+item.dec;
+			nodeStr += (ns+"\n");
+			let ncon = "";
+			if (item["next"] != "") {
+				ncon += (item.dir!="") ? item.name +"("+ item.dir +")" + "->" + item.next + "\n"
+							: item.name + "->" + item.next + "\n";
+			}
+			if (item["yes-next"] != "") {
+				if(item["yes-dir"] != "") 
+					ncon += item.name+"(yes," + item["yes-dir"] + ")" + "->" + item["yes-next"] + "\n";
+				else ncon += item.name+"(yes)" + "->" + item["yes-next"] + "\n";
+			}
+			if (item["no-next"] != "") {
+				if(item["no-dir"] != "") 
+					ncon += item.name+"(no," + item["no-dir"] + ")" + "->" + item["no-next"] + "\n";
+				else ncon += item.name+"(no)" + "->" + item["no-next"] + "\n";
+			}
+			con += ncon;
+		}
+		return nodeStr+con;
+	}
+
+	// 展示信息
+	var aType = "";
+	function showMess(name, message, level){
+		// success, info, warning, danger
+		const a = document.getElementsByClassName("alert")[0];
+		if(level!==undefined){
+			aType = " alert-"+level;
+			a.className += aType;
+		}else{
+			aType="";
+		}
+		a.children[1].textContent = "[ "+name+" ] ";
+		a.lastElementChild.textContent = message;
+
+		$(".alert").addClass("in");
+		setTimeout('$(".alert").removeClass(aType+" in")', 1500);
+	}
+
+	// 信息框重绘
+	function pullIn() {
+		$("body").append('<div class="alert alert-success alert-dismissible pull-right fade " role="alert" ><button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true" onclick="pullIn()">&times;</span></button><strong>Success! </strong><span>Better check yourself, youre not looking too good.</span></div>');
+	};
+	// 选择框添加选项
+	function pullOption(opt) {
+		try {
+			const newopt = document.createElement('option');
+		    newopt.text = opt;
+		    newopt.value = opt;
+		    document.getElementsByTagName('select')[0].options.add(newopt);
+		}catch(e){
+			showMess("选择框操作失败！","",danger);
+		}
+	}
+	// 数据库内是否存在
+	function isInDB(value){
+		for (var i = nList.length - 1; i >= 0; i--) {
+			if (nList[i]._id == value) return true;
+		}
+		return false;
+	}
+	// 重绘 svg 
+	function reWriteSVG(){
+		try{
+			var sh = $("#canvas svg").height();
+			var sw = $("#canvas svg").width();
+
+			var fw = $("#canvas").width()*0.9;// 理想宽度
+			var fh = $("#code").height()*0.9;// 理想高度
+			var bw = $("#canvas").width()*1.5;// 最大宽度
+			var bh = $("#code").height()*1.5;// 最大高度
+
+			var ws = $("#canvas").width()/$("svg").width(); // 画布宽/svg宽。
+			var hs = $("#canvas").width()/$("svg").width(); // 画布高/svg高。
+		} catch (e) {
+			showMess("获取宽度失败！","","warning");
+		}
+
+		// 过高
+		if (sh>bh && sh/sw >= 2) {
+			$("svg").attr({
+				"width": $("#canvas").width()*0.5,
+				"height": $("svg").height() *0.5 * ws
+			});
+			return;
+		}
+		// 过宽
+		if (sw>bw && sw/sh >= 2) {
+			$("svg").attr({
+				"width": $("svg").width()*hs,
+				"height": bh
+			});
+			return;
+		}
+
+		// 正常比例
+		$("svg").attr({
+			"width": $("#canvas").width() * 0.9,
+			"height": $("svg").height() * 0.9 * ws
+			// 修正问题
+		});
+	}
+
+	// 放大或缩小 svg
+	function scalingSvg(isZoom, obj){
+		var ts = obj.style.transform;
+		var s = 1; // 倍数
+		if (ts.search("scale") >= 0){
+			s = Number(ts.split(" ")[0].replace("scale(","").replace(")",""));
+		}
+		
+		if (isZoom) {
+			obj.style.transform = "scale("+ (s+0.02) +") translateY(" + (obj.getAttribute("height")*(s+0.02-1)/2) + "px)";
+		} else {
+			obj.style.transform = "scale("+ (s-0.02) +") translateY(" + (obj.getAttribute("height")*(s-0.02-1)/2) + "px)";
+		}
+	}
+</script>
+<script type="text/javascript">// 键盘事件
+	var keys = []; 
+	$("#code").keydown(function(e){/**/
+		if (e.keyCode == 17) {
+			keys.push(17);
+		}
+		if (e.keyCode == 13) {
+			if (keys[keys.length - 1] == 17) {
+				//回车事件
+				$("#run").click();
+			}
+		}
+	});
+	$("#code").keyup(function(e){
+		keys = [];
+	});
+	$("#input").keydown(function(e){
+		if(e.keyCode == 13) {
+			$(".input-group-addon").click();
+		}
+	});
+
+	// 滑轮滚动事件
+	// $("#svg_content")[0].addEventListener('wheel', function(e){
+	// 	let evt = e||window.event;
+	// 	evt.preventDefault();
+	// 	scalingSvg(evt.deltaY<0, this.firstElementChild);
+	// });
+</script>
+
+
+</html>
